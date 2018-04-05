@@ -1,5 +1,3 @@
-/* simplistic shell that supports bare minimum subset of POSIX shell */
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -10,49 +8,88 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Constants */
 #define MAX_CMDLINE 4096
 #define MAX_ARGS    256
 
-char cmdline[MAX_CMDLINE];
-int   argc;
-char *argv[255];
+/* Markers */
+#define owned
 
+/* boolean */
+typedef int BOOL;
+#define TRUE (!0)
+#define FALSE (0)
+
+/* Helper */
+static void safe_exit(int status);
+
+/* Command interpretation */
+char  cmdline[MAX_CMDLINE]; /* Original cmdline; will be modified */
+int   argc;                 /* Number of parts */
+char *argv[MAX_ARGS];       /* Parts taken apart */
 static void prompt(void);
 static void parse(void);
 static int  run(void);
 
+/* Built-in commands */
 typedef int (*builtin_cmd)(char **args);
 static int cmd_cd(char **args);
 static int cmd_pwd(char **args);
 static int cmd_exit(char **args);
+static int cmd_export(char **args);
+static int cmd_unset(char **args);
 struct builtin {
-  char        *name;
+  const char  *name;
   builtin_cmd  func;
 } builtins[] = {
   { "cd",   cmd_cd },
   { "pwd",  cmd_pwd },
   { "exit", cmd_exit },
+  { "export", cmd_export },
+  { "unset", cmd_unset },
   { NULL, NULL },
 };
 
+/* Variable */
+struct variable {
+  struct variable *next;
+  owned char      *name;
+  owned char      *value;
+  BOOL             exported;
+} *vlist;
+static void set(const char *name, const char *value, BOOL export);
+static void unset(const char *name);
+
+/* Rea1 C0DE Beg1ns here! :-) */
 int
 main(int optc, char *optv[]) {
+  /* Initialize */
+  vlist = NULL;
+
   /* META-LOOP! */
   for (;;) {
-    argc = 0;
-
     /* Read */
     prompt();
     if (!fgets(cmdline, MAX_CMDLINE, stdin)) {
       /* Exit on Ctrl-D */
       putchar('\n');
-      exit(0);
+      safe_exit(0);
+      continue;
     }
 
     /* Parse and run */
     parse();
     run();
   }
+}
+
+/* Exit only if shell doesn't act as init */
+static void
+safe_exit(int status) {
+  if (getpid() == 1)
+    fprintf(stderr, "init shouldn't exit\n");
+  else
+    exit(status);
 }
 
 /* Ready for a new command, printing prompt */
@@ -95,9 +132,10 @@ parse() {
 }
 
 /* Run the commandline */
-int
+static int
 run() {
   int i;
+  pid_t pid;
 
   /* Empty command? */
   if (!argv[0])
@@ -111,7 +149,7 @@ run() {
   }
 
   /* External commands */
-  pid_t pid = fork();
+  pid = fork();
   if (pid < 0) {
     perror("Couldn't create process");
     return 1;
@@ -131,8 +169,10 @@ static int
 cmd_cd(char **args) {
   if (!args[0]) {
     args[0] = getenv("HOME");
-    fprintf(stderr, "HOME is not set, exiting\n");
-    return 1;
+    if (!args[0]) {
+      fprintf(stderr, "HOME is not set, exiting\n");
+      return 1;
+    }
   }
 
   if (chdir(args[0])) {
@@ -143,6 +183,61 @@ cmd_cd(char **args) {
   return 0;
 }
 
+/* Variable */
+static struct variable *
+var_find(const char *name) {
+  struct variable *v = vlist;
+  while (v && strcmp(name, v->name))
+    v = v->next;
+  return v;
+}
+
+/* Create a new variable, or modify an existing one */
+static void
+set(const char *name, const char *value, BOOL export) {
+  struct variable *v = var_find(name);
+
+  if (v) {
+    free(v->value);
+    v->value = strdup(value);
+  } else {
+    v = malloc(sizeof(struct variable));
+    v->name = strdup(name);
+    v->value = strdup(value);
+    v->next = vlist;
+    v->exported = export;
+    vlist = v;
+  }
+
+  /* Environment vars should follow the changes */
+  if (v->exported || export)
+    setenv(v->name, v->value, TRUE);
+}
+
+/* Remove a variable from the variable list */
+static void
+unset(const char *name) {
+  struct variable *v = vlist, *u;
+
+  while (v && v->next) {
+    if (!strcmp(v->next->name, name))
+      goto remove;
+    else
+      v = v->next;
+  }
+  return;
+
+ remove:
+  u = v->next;
+  if (u->exported)
+    unsetenv(u->name);
+  v->next = u->next;
+  free(u->name);
+  free(u->value);
+  free(u);
+}
+
+/* Builtin Commands */
 /* Print current working directory */
 static int
 cmd_pwd(char **args) {
@@ -160,6 +255,43 @@ cmd_pwd(char **args) {
 /* Exit gracefully. */
 static int
 cmd_exit(char **args) {
-  exit(0);
+  safe_exit(0);
+  return 0;
+}
+
+/* Expose a variable to children */
+static int
+cmd_export(char **args) {
+  for (; *args; ++args) {
+    char *p;
+
+    for (p = *args; *p && *p != '='; ++p);
+    if (*p == '=') {
+      *p = '\0';
+      set(*args, p+1, TRUE);
+    } else {
+      struct variable *v = var_find(*args);
+
+      if (v) {
+	v->exported = TRUE;
+	setenv(v->name, v->value, TRUE);
+      }
+    }
+  }
+
+  return 0;
+}
+
+/* Unset a variable */
+static int
+cmd_unset(char **args) {
+  for (; *args; ++args) {
+    unset(*args);
+
+    /* Some environment variables are inherited from parent.
+       Make sure they are unset. */
+    unsetenv(*args);
+  }
+
   return 0;
 }
