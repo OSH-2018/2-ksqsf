@@ -99,6 +99,10 @@ int
 run() {
   int i;
 
+  /* Empty command? */
+  if (!argv[0])
+    return 0;
+
   /* Check whether it's a builtin command */
   for (i = 0; builtins[i].name; ++i) {
     if (!strcmp(builtins[i].name, argv[0])) {
