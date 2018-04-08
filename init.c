@@ -300,24 +300,7 @@ static void wait_for_completion() {
   }
 }
 
-/* Change current directory */
-static int cmd_cd(char **args) {
-  if (!args[0]) {
-    args[0] = getenv("HOME");
-    if (!args[0]) {
-      fprintf(stderr, "HOME is not set, exiting\n");
-      return 1;
-    }
-  }
-
-  if (chdir(args[0])) {
-    perror("Couldn't change directory");
-    return 1;
-  }
-
-  return 0;
-}
-
+/* Variable */
 /* Find the variable node */
 static struct variable *var_find(const char *name) {
   struct variable *v = vlist;
@@ -372,6 +355,24 @@ static void unset(const char *name) {
 }
 
 /* Builtin Commands */
+/* Change current directory */
+static int cmd_cd(char **args) {
+  if (!args[0]) {
+    args[0] = getenv("HOME");
+    if (!args[0]) {
+      fprintf(stderr, "HOME is not set, exiting\n");
+      return 1;
+    }
+  }
+
+  if (chdir(args[0])) {
+    perror("Couldn't change directory");
+    return 1;
+  }
+
+  return 0;
+}
+
 /* Print current working directory */
 static int cmd_pwd(char **args) {
   char wd[4096];
