@@ -72,7 +72,7 @@ static void set(const char *name, const char *value, BOOL export);
 static void unset(const char *name);
 
 /* Rea1 C0DE Beg1ns here! :-) */
-int main(int optc, char *optv[]) {
+int main() {
   /* Initialize */
   vlist = NULL;
   clist = NULL;
@@ -157,33 +157,33 @@ parse_cmd(struct command *cmd) {
       if (cmd->outfd >= 0) close(cmd->outfd);
       cmd->outfd = open(cmd->argv[i+1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
       if (cmd->outfd < 0) {
-	perror("Couldn't open output file");
-	cmd->outfd = -1;
+        perror("Couldn't open output file");
+        cmd->outfd = -1;
       }
       for (j = i+2; j < cmd->argc; ++j)
-	cmd->argv[j-2] = cmd->argv[j];
+        cmd->argv[j-2] = cmd->argv[j];
       cmd->argc -= 2;
       cmd->argv[cmd->argc] = 0;
     } else if (!strcmp(">>", cmd->argv[i])) {
       if (cmd->outfd >= 0) close(cmd->outfd);
       cmd->outfd = open(cmd->argv[i+1], O_WRONLY | O_CREAT | O_APPEND, 0644);
       if (cmd->outfd < 0) {
-	perror("Couldn't open output file");
-	cmd->outfd = -1;
+        perror("Couldn't open output file");
+        cmd->outfd = -1;
       }
       for (j = i+2; j < cmd->argc; ++j)
-	cmd->argv[j-2] = cmd->argv[j];
+        cmd->argv[j-2] = cmd->argv[j];
       cmd->argc -= 2;
       cmd->argv[cmd->argc] = 0;
     } else if (!strcmp("<", cmd->argv[i])) {
       if (cmd->infd >= 0) close(cmd->infd);
       cmd->infd = open(cmd->argv[i+1], O_RDONLY);
       if (cmd->infd < 0) {
-	perror("Couldn't open input file");
-	cmd->infd = -1;
+        perror("Couldn't open input file");
+        cmd->infd = -1;
       }
       for (j = i+2; j < cmd->argc; ++j)
-	cmd->argv[j-2] = cmd->argv[j];
+        cmd->argv[j-2] = cmd->argv[j];
       cmd->argc -= 2;
       cmd->argv[cmd->argc] = 0;
     }
@@ -288,8 +288,8 @@ static int run() {
     for (i = 0; builtins[i].name; ++i) {
       /* If it's a builtin, don't fork! */
       if (!strcmp(builtins[i].name, clist->argv[0])) {
-	(builtins[i].func)(clist->argv + 1);
-	return 0;
+        (builtins[i].func)(clist->argv + 1);
+        return 0;
       }
     }
   }
@@ -299,8 +299,8 @@ static int run() {
     /* Set up pipes if c is not the last */
     if (c->next) {
       if (pipe(pipefd) < 0) {
-	perror("Couldn't create pipes");
-	return 1;
+        perror("Couldn't create pipes");
+        return 1;
       }
       outfd = pipefd[1];
     }
@@ -343,8 +343,8 @@ static void wait_for_completion() {
     /* Mark PID as completed */
     for (c = clist; c; c = c->next) {
       if (c->pid == pid) {
-	c->status = status;
-	c->completed = TRUE;
+        c->status = status;
+        c->completed = TRUE;
       }
     }
 
@@ -462,8 +462,8 @@ static int cmd_export(char **args) {
       struct variable *v = var_find(*args);
 
       if (v) {
-	v->exported = TRUE;
-	setenv(v->name, v->value, TRUE);
+        v->exported = TRUE;
+        setenv(v->name, v->value, TRUE);
       }
     }
   }
