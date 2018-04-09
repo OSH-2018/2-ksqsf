@@ -1,6 +1,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -33,6 +35,7 @@ struct command {
   pid_t pid;
   int status;
   BOOL completed;
+  int infd, outfd;
 } *clist;
 static void prompt(void);
 static void parse(void);
@@ -125,11 +128,10 @@ static void prompt() {
 static void
 parse_cmd(struct command *cmd) {
   char *p;
+  int i, j;
 
   cmd->argc = 0;
   for (p = cmd->cmdline; *p && *p != '\n'; ++p) {
-    int i;
-
     /* Skip whitespace */
     if (isspace(*p)) continue;
 
@@ -141,6 +143,7 @@ parse_cmd(struct command *cmd) {
   }
   cmd->argv[cmd->argc] = 0;
 
+  /* Avoid argv[0] == NULL */
   if (cmd->argv[0] == 0) {
     cmd->argc = 1;
     cmd->argv[0] = cmd->cmdline;
@@ -148,6 +151,43 @@ parse_cmd(struct command *cmd) {
     cmd->cmdline[0] = 0;
   }
 
+  /* Open files for redirection */
+  for (i = 0; i < cmd->argc - 1; ++i) {
+    if (!strcmp(">", cmd->argv[i])) {
+      if (cmd->outfd >= 0) close(cmd->outfd);
+      cmd->outfd = open(cmd->argv[i+1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (cmd->outfd < 0) {
+	perror("Couldn't open output file");
+	cmd->outfd = -1;
+      }
+      for (j = i+2; j < cmd->argc; ++j)
+	cmd->argv[j-2] = cmd->argv[j];
+      cmd->argc -= 2;
+      cmd->argv[cmd->argc] = 0;
+    } else if (!strcmp(">>", cmd->argv[i])) {
+      if (cmd->outfd >= 0) close(cmd->outfd);
+      cmd->outfd = open(cmd->argv[i+1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+      if (cmd->outfd < 0) {
+	perror("Couldn't open output file");
+	cmd->outfd = -1;
+      }
+      for (j = i+2; j < cmd->argc; ++j)
+	cmd->argv[j-2] = cmd->argv[j];
+      cmd->argc -= 2;
+      cmd->argv[cmd->argc] = 0;
+    } else if (!strcmp("<", cmd->argv[i])) {
+      if (cmd->infd >= 0) close(cmd->infd);
+      cmd->infd = open(cmd->argv[i+1], O_RDONLY);
+      if (cmd->infd < 0) {
+	perror("Couldn't open input file");
+	cmd->infd = -1;
+      }
+      for (j = i+2; j < cmd->argc; ++j)
+	cmd->argv[j-2] = cmd->argv[j];
+      cmd->argc -= 2;
+      cmd->argv[cmd->argc] = 0;
+    }
+  }
 #ifdef DEBUG
   printf("DBG: argc = %d\n", cmd->argc);
   for (int i = 0; cmd->argv[i] != 0; ++i) {
@@ -174,6 +214,8 @@ static void parse() {
     cmd->next = NULL;
     cmd->completed = FALSE;
     cmd->pid = 0;
+    cmd->infd = -1;
+    cmd->outfd = -1;
 
     /* Parse it */
     parse_cmd(cmd);
@@ -197,6 +239,17 @@ static void launch_command(struct command *cmd, int infd, int outfd) {
   if (cmd->argv[0] == NULL)
     exit(255);
 
+  /* Redirect */
+  if (cmd->infd >= 0) {
+    dup2(cmd->infd, STDIN_FILENO);
+    close(cmd->infd);
+  }
+  if (cmd->outfd >= 0) {
+    dup2(cmd->outfd, STDOUT_FILENO);
+    close(cmd->outfd);
+  }
+
+  /* Pipe */
   if (infd != STDIN_FILENO) {
     dup2(infd, STDIN_FILENO);
     close(infd);
@@ -268,6 +321,10 @@ static int run() {
       close(infd);
     if (outfd != STDOUT_FILENO)
       close(outfd);
+    if (c->infd >= 0)
+      close(c->infd);
+    if (c->outfd >= 0)
+      close(c->outfd);
     infd = pipefd[0];
   }
   return 1;
